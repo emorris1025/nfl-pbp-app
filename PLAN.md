@@ -16,6 +16,9 @@ _Started 2026-10-28_
 | Display | Headline numbers plus simple bar charts |
 | Usage | Weekly prep on Wi-Fi (offline caching not required) |
 | First feature (MVP) | Team tendencies |
+| Views | Offense, Defense, Special teams, Penalties (decided 2026-10-28) |
+| Data scope | Every play: snaps, kicks, nullified plays, penalties, kneels, spikes |
+| NFL comparison | Switchable: selected season only, or all loaded seasons |
 
 ## 2. Architecture
 
@@ -69,8 +72,8 @@ Running cost: $0.
 |---|---|---|
 | **0. Setup** ✅ code done, awaiting GitHub | Repo, Pages, skeleton screen with team/season pickers, headline tiles vs. NFL, by-down table | Open a working page on your phone |
 | **1. Data pipeline** ✅ code done, awaiting GitHub | Python prep script + nightly GitHub Action | See fresh data land automatically |
-| **2. MVP screen** | Team picker + down/distance + field position + game script filters, headline tiles, 2-3 charts | Do real weekly tendency prep |
-| **3. Personnel** | Join participation data; personnel/formation filters | Filter by 11 vs. 12 personnel, etc. |
+| **2. MVP screen** ✅ | Offense/Defense/Special teams/Penalties views; down, distance, field position, quarter, score, win prob, formation, personnel filters; run direction, pass target, personnel bars; full play list | Do real weekly tendency prep |
+| **3. Personnel** ✅ (2023-25; 2026 when nflverse publishes) | Join participation data; personnel filter | Filter by 11 vs. 12 personnel, etc. |
 | **4. Advanced metrics** | League rankings: team/QB EPA, success rate, CPOE | See where teams rank |
 | **5. Game previews** | Matchup screen: Team A offense vs. Team B defense, side by side | Prep for a specific game / betting angle |
 | **6. Player / fantasy** | Player usage: targets, carries, air yards, red zone share, weekly trend | Do fantasy research |
@@ -85,7 +88,8 @@ You have an account but want help. Steps we'll do together:
 
 ## 6. Open questions for later
 
-- Should defensive tendencies be in the MVP or come right after? (Planned: offense first, defense with a toggle in Phase 2.)
-- Which "league average" baseline should comparisons use: same season, or all loaded seasons?
+- Add opponent and week-range filters (e.g. "last 4 weeks")?
+- Include postseason games (currently regular season only)?
+- Defensive coverage (man/zone, Cover 1/2/3) is in the participation data. Add it to the Defense view?
 - Do you want to save favorite filter presets (e.g. "3rd & medium, red zone")?
 - Should the betting screen include spreads and totals? (nflverse has closing lines in its schedules data.)

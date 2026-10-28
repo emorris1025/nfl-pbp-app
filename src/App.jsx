@@ -1,63 +1,82 @@
 import { useEffect, useState } from 'react'
 import { getDb, query } from './db.js'
+import { FILTER_GROUPS, activeCount, emptyFilters } from './filters.js'
+import { Chips, Segmented } from './components.jsx'
+import Scrimmage from './views/Scrimmage.jsx'
+import SpecialTeams from './views/SpecialTeams.jsx'
+import Penalties from './views/Penalties.jsx'
 
-const pct = (v) => (v == null ? '–' : `${(v * 100).toFixed(1)}%`)
-const signed = (v, d = 3) => (v == null ? '–' : `${v >= 0 ? '+' : ''}${v.toFixed(d)}`)
+const VIEWS = [
+  { id: 'off', label: 'Offense' },
+  { id: 'def', label: 'Defense' },
+  { id: 'st', label: 'Special teams' },
+  { id: 'pen', label: 'Penalties' },
+]
 
-const STAT_SQL = `
-  count(*) AS plays,
-  avg(pass) AS pass_rate,
-  avg(epa) AS epa,
-  avg(success) AS success,
-  avg(yards_gained) AS ypp`
+// Remembered between visits; storage can be unavailable (private mode).
+function usePref(key, initial) {
+  const [value, setValue] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(key)) ?? initial
+    } catch {
+      return initial
+    }
+  })
+  const set = (v) => {
+    setValue(v)
+    try {
+      localStorage.setItem(key, JSON.stringify(v))
+    } catch {
+      // ignore
+    }
+  }
+  return [value, set]
+}
 
 export default function App() {
   const [manifest, setManifest] = useState(null)
   const [teams, setTeams] = useState([])
   const [season, setSeason] = useState(null)
-  const [team, setTeam] = useState('')
-  const [stats, setStats] = useState(null)
+  const [team, setTeam] = usePref('team', null)
+  const [view, setView] = usePref('view', 'off')
+  const [baseline, setBaseline] = usePref('baseline', 'season')
+  const [filters, setFilters] = useState(emptyFilters)
+  const [showFilters, setShowFilters] = useState(false)
   const [error, setError] = useState(null)
 
   useEffect(() => {
     getDb()
       .then(async ({ manifest }) => {
-        setManifest(manifest)
         const latest = Math.max(...manifest.seasons.map((s) => s.season))
+        const rows = await query(`SELECT DISTINCT posteam FROM pbp WHERE season = ${latest} AND posteam IS NOT NULL ORDER BY 1`)
+        const list = rows.map((r) => r.posteam)
+        setTeams(list)
+        if (!list.includes(team)) setTeam(list[0])
         setSeason(latest)
-        const rows = await query(`SELECT DISTINCT posteam FROM pbp WHERE season = ${latest} ORDER BY 1`)
-        setTeams(rows.map((r) => r.posteam))
-        setTeam(rows[0]?.posteam ?? '')
+        setManifest(manifest)
       })
       .catch((e) => setError(String(e)))
   }, [])
 
-  useEffect(() => {
-    if (!season || !/^[A-Z]{2,3}$/.test(team)) return
-    const where = `season = ${Number(season)} AND season_type = 'REG'`
-    Promise.all([
-      query(`SELECT ${STAT_SQL} FROM pbp WHERE ${where} AND posteam = '${team}'`),
-      query(`SELECT ${STAT_SQL} FROM pbp WHERE ${where}`),
-      query(`SELECT down, ${STAT_SQL} FROM pbp
-             WHERE ${where} AND posteam = '${team}' AND down IS NOT NULL
-             GROUP BY down ORDER BY down`),
-    ])
-      .then(([[t], [lg], byDown]) => setStats({ t, lg, byDown }))
-      .catch((e) => setError(String(e)))
-  }, [season, team])
-
   if (error) return <main><p className="error">Something went wrong: {error}</p></main>
-  if (!manifest) return <main><p className="muted">Loading data engine…</p></main>
+  if (!manifest) return <main><p className="muted">Loading data engine and play-by-play…</p></main>
 
   const info = manifest.seasons.find((s) => s.season === season)
+  const years = manifest.seasons.map((s) => s.season)
+  const short = (y) => `'${String(y).slice(2)}`
+  const baselineLabel = baseline === 'all'
+    ? `NFL ${short(Math.min(...years))}–${short(Math.max(...years))}`
+    : `NFL ${short(season)}`
+  const scrimmage = view === 'off' || view === 'def'
+  const nFilters = activeCount(filters)
 
   return (
     <main>
       <header>
-        <h1>Team Tendencies</h1>
+        <h1>{team} {VIEWS.find((v) => v.id === view).label}</h1>
         <p className="muted">
-          Offense · regular season · data through week {info?.max_week} ·
-          updated {new Date(manifest.built_at).toLocaleDateString()}
+          {season} regular season · through week {Math.min(info?.max_week ?? 18, 18)} ·
+          data updated {new Date(manifest.built_at).toLocaleDateString()}
         </p>
       </header>
 
@@ -65,7 +84,7 @@ export default function App() {
         <label>
           Season
           <select value={season} onChange={(e) => setSeason(Number(e.target.value))}>
-            {manifest.seasons.map((s) => <option key={s.season}>{s.season}</option>)}
+            {years.map((y) => <option key={y}>{y}</option>)}
           </select>
         </label>
         <label>
@@ -76,45 +95,62 @@ export default function App() {
         </label>
       </div>
 
-      {stats && (
-        <>
-          <section className="tiles">
-            <Tile label="Pass rate" value={pct(stats.t.pass_rate)} league={pct(stats.lg.pass_rate)} />
-            <Tile label="EPA / play" value={signed(stats.t.epa)} league={signed(stats.lg.epa)} />
-            <Tile label="Success rate" value={pct(stats.t.success)} league={pct(stats.lg.success)} />
-            <Tile label="Yards / play" value={stats.t.ypp?.toFixed(2)} league={stats.lg.ypp?.toFixed(2)} />
-          </section>
+      <Segmented options={VIEWS} value={view} onChange={setView} />
 
-          <h2>By down</h2>
-          <table>
-            <thead>
-              <tr><th>Down</th><th>Plays</th><th>Pass</th><th>EPA</th><th>Success</th></tr>
-            </thead>
-            <tbody>
-              {stats.byDown.map((r) => (
-                <tr key={r.down}>
-                  <td>{r.down}</td>
-                  <td>{r.plays}</td>
-                  <td>{pct(r.pass_rate)}</td>
-                  <td>{signed(r.epa, 2)}</td>
-                  <td>{pct(r.success)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <p className="muted small">{stats.t.plays} run/pass plays. League figures are per-play averages.</p>
-        </>
+      <div className="row">
+        <span className="muted small-label">Compare to</span>
+        <Segmented
+          small
+          options={[
+            { id: 'season', label: `${season} only` },
+            { id: 'all', label: `All seasons` },
+          ]}
+          value={baseline}
+          onChange={setBaseline}
+        />
+      </div>
+
+      {scrimmage && (
+        <div className="filters">
+          <div className="filters-head">
+            <button className="disclosure" onClick={() => setShowFilters(!showFilters)}>
+              {showFilters ? '▾' : '▸'} Filters{nFilters ? ` (${nFilters})` : ''}
+            </button>
+            {nFilters > 0 && <button className="link" onClick={() => setFilters(emptyFilters())}>Reset</button>}
+          </div>
+          {showFilters && FILTER_GROUPS.map((g) => {
+            const disabled = g.needsPersonnel && !info?.has_personnel
+            return (
+              <div className="filter-group" key={g.key}>
+                <div className="filter-label">
+                  {g.label}
+                  {disabled && <span className="muted"> · not yet available for {season}</span>}
+                </div>
+                <Chips
+                  options={g.options}
+                  value={filters[g.key]}
+                  disabled={disabled}
+                  onChange={(v) => setFilters({ ...filters, [g.key]: v })}
+                />
+              </div>
+            )
+          })}
+        </div>
       )}
-    </main>
-  )
-}
 
-function Tile({ label, value, league }) {
-  return (
-    <div className="tile">
-      <div className="tile-label">{label}</div>
-      <div className="tile-value">{value}</div>
-      <div className="tile-league">NFL {league}</div>
-    </div>
+      {scrimmage && (
+        <Scrimmage
+          season={season}
+          team={team}
+          side={view}
+          baseline={baseline}
+          baselineLabel={baselineLabel}
+          filters={info?.has_personnel ? filters : { ...filters, personnel: null }}
+          hasPersonnel={info?.has_personnel}
+        />
+      )}
+      {view === 'st' && <SpecialTeams season={season} team={team} baseline={baseline} baselineLabel={baselineLabel} />}
+      {view === 'pen' && <Penalties season={season} team={team} baseline={baseline} baselineLabel={baselineLabel} />}
+    </main>
   )
 }

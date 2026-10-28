@@ -2,7 +2,7 @@
 
 Usage: python scripts/build_data.py --out public/data [--seasons 2023 2024 2025 2026]
 
-Output, per season: pbp_<season>.arrow.gz (run/pass plays only, ~60 columns),
+Output, per season: pbp_<season>.arrow.gz (every play, ~90 columns),
 plus manifest.json listing what was built and when.
 
 Gzipped Arrow is used instead of Parquet because DuckDB-WASM reads Arrow
@@ -28,12 +28,12 @@ PART_URL = BASE + "/pbp_participation/pbp_participation_{season}.parquet"
 PBP_COLS = [
     # game / situation
     "game_id", "play_id", "season", "week", "season_type", "game_date",
-    "posteam", "defteam", "home_team", "away_team",
-    "qtr", "down", "ydstogo", "yardline_100", "goal_to_go",
+    "posteam", "defteam", "home_team", "away_team", "drive",
+    "qtr", "time", "down", "ydstogo", "yardline_100", "goal_to_go",
     "game_seconds_remaining", "half_seconds_remaining",
     "score_differential", "wp",
     # play type / formation basics
-    "play_type", "pass", "rush", "qb_dropback", "qb_scramble", "sack",
+    "play_type", "play_type_nfl", "desc", "special_teams_play", "pass", "rush", "qb_dropback", "qb_scramble", "sack",
     "shotgun", "no_huddle", "xpass", "pass_oe",
     # direction / depth
     "pass_length", "pass_location", "air_yards", "run_location", "run_gap",
@@ -44,6 +44,16 @@ PBP_COLS = [
     "passer_player_id", "passer_player_name",
     "rusher_player_id", "rusher_player_name",
     "receiver_player_id", "receiver_player_name",
+    # penalties (only the first penalty on a play is recorded; declined = 0)
+    "penalty", "penalty_team", "penalty_type", "penalty_yards",
+    "penalty_player_name", "first_down_penalty",
+    # special teams. Kickoffs: posteam = receiving team. Punts/FG/XP: posteam = kicking team.
+    "kick_distance", "field_goal_result", "extra_point_result",
+    "two_point_attempt", "two_point_conv_result",
+    "touchback", "punt_blocked", "punt_inside_twenty", "punt_fair_catch",
+    "kickoff_fair_catch", "return_team", "return_yards", "return_touchdown",
+    "kicker_player_name", "punter_player_name",
+    "punt_returner_player_name", "kickoff_returner_player_name",
 ]
 # name -> type (types are needed to fill NULLs when a season has no data yet)
 PART_COLS = {
@@ -72,7 +82,7 @@ def build_season(con, season: int, raw: pathlib.Path, out: pathlib.Path) -> dict
     part = raw / f"part_{season}.parquet"
     has_part = download(PART_URL.format(season=season), part)
 
-    pbp_select = ", ".join(f"p.{c}" for c in PBP_COLS)
+    pbp_select = ", ".join(f'p."{c}"' for c in PBP_COLS)  # quoted: "desc" is a SQL keyword
     if has_part:
         part_select = ", ".join(f"x.{c}" for c in PART_COLS)
         # "1 C, 2 G, 1 QB, 1 RB, 2 T, 1 TE, 3 WR" -> "11" (RB+FB count, TE count)
@@ -88,11 +98,21 @@ def build_season(con, season: int, raw: pathlib.Path, out: pathlib.Path) -> dict
         part_select += ", NULL::VARCHAR AS personnel"
         join = ""
 
+    # nflverse's special_teams_play misses nullified kicks ("(Punt formation)
+    # PENALTY ... No Play") and some field goals, so derive our own flag.
+    st_play = r"""(
+        p.play_type IN ('kickoff', 'punt', 'field_goal', 'extra_point')
+        OR (p.play_type = 'no_play' AND regexp_matches(p."desc",
+            '(?i)(\bpunts\b|\bkicks\b|field goal|extra point|punt formation|kick formation)'))
+    ) AS st_play"""
+
     table = con.sql(f"""
-        SELECT {pbp_select}, {part_select}
+        SELECT {pbp_select}, {part_select}, {st_play}
         FROM '{pbp}' p {join}
-        WHERE p.play_type IN ('pass', 'run')
-        ORDER BY p.posteam, p.game_id, p.play_id
+        -- every snap and kick; NULL play_type rows are game markers
+        -- ("END QUARTER 2", "GAME"), not plays
+        WHERE p.play_type IS NOT NULL
+        ORDER BY p.game_id, p.play_id
     """).to_arrow_table()
 
     dest = out / f"pbp_{season}.arrow.gz"
