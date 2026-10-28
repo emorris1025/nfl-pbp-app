@@ -79,8 +79,8 @@ Running cost: $0.
 
 You have an account but want help. Steps we'll do together:
 1. Create a new repository (e.g. `nfl-pbp-app`), public (required for free Pages).
-2. Link GitHub to Claude (claude.ai/connect-github) and install the Claude GitHub App on the repo so code can be pushed.
-3. Turn on GitHub Pages (Settings > Pages > Source: **GitHub Actions**).
+2. ✅ Link GitHub to Claude (claude.ai/connect-github) and install the Claude GitHub App on the repo so code can be pushed.
+3. ✅ Turn on GitHub Pages (Settings > Pages > Source: **GitHub Actions**).
 4. Push, watch the first workflow run, then open `https://emorris1025.github.io/nfl-pbp-app/` on your phone.
 
 ## 6. Open questions for later
