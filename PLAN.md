@@ -12,7 +12,7 @@ _Started 2026-10-28_
 | Freshness | Next-day (nightly refresh) |
 | History | 2023 through the current 2026 season |
 | Hosting | Free static hosting (GitHub Pages) with no server |
-| Query engine | DuckDB-WASM, which runs SQL on Parquet files inside the phone browser |
+| Query engine | DuckDB-WASM, which runs SQL inside the phone browser on gzipped Arrow files |
 | Display | Headline numbers plus simple bar charts |
 | Usage | Weekly prep on Wi-Fi (offline caching not required) |
 | First feature (MVP) | Team tendencies |
@@ -23,20 +23,22 @@ _Started 2026-10-28_
 nflverse (GitHub releases, nightly)
         |
         v
-GitHub Action (runs nightly in season)
-  - Python script downloads play_by_play_YYYY.parquet
-  - keeps ~40 of ~370 columns, regular + post season only
-  - writes data/pbp_YYYY.parquet  (~10-20 MB per season)
+GitHub Action (nightly Sept-Feb, on push, or on demand)
+  - Python script downloads play_by_play_YYYY + pbp_participation_YYYY
+  - keeps run/pass plays and ~60 of ~370 columns, joins personnel
+  - writes data/pbp_YYYY.arrow.gz  (~2.5 MB per season)
+  - builds the app and deploys both to Pages (data is not committed to git)
         |
         v
 GitHub Pages (static site)
   - index.html + JS app (Vite + React)
-  - data/*.parquet
+  - data/*.arrow.gz + manifest.json
         |
         v
 Phone browser (PWA)
-  - DuckDB-WASM loads Parquet, runs SQL for each filter change
-  - Chart.js renders charts
+  - unzips each season and loads it into DuckDB-WASM (one-time ~8 MB engine download, then cached)
+  - runs SQL for each filter change
+  - Chart.js renders charts (Phase 2)
 ```
 
 Running cost: $0.
@@ -57,14 +59,16 @@ Running cost: $0.
 - Bar charts: run direction/gap, pass depth (short/intermediate/deep), pass location (L/M/R)
 - Splits table: EPA and success rate by down, run vs. pass
 
-**Data caveat:** shotgun and no-huddle are in the core play-by-play file. Personnel groupings and formation come from the separate nflverse *participation* dataset, which can lag or have gaps for the current season. Phase 1 uses shotgun/no-huddle; Phase 3 adds personnel after the data has been checked.
+**Data caveat (checked 2026-10-28):** shotgun and no-huddle are in the core play-by-play file. Personnel groupings and formation come from the separate nflverse *participation* dataset. It is complete for 2023-2025 (100% of plays matched), but **nflverse has not yet published 2026 participation data**. The pipeline already joins it and derives a `personnel` column (`11`, `12`, `21`...). 2026 plays will show personnel automatically once nflverse publishes the data. Participation data also includes defensive coverage (man/zone, Cover 1/2/3...), which could support a future defensive screen.
+
+**Why Arrow instead of Parquet:** DuckDB-WASM's Parquet reader is an extension downloaded at runtime from extensions.duckdb.org. Gzipped Arrow loads with no extra dependency and is about the same size.
 
 ## 4. Build phases
 
 | Phase | Deliverable | You'll be able to... |
 |---|---|---|
-| **0. Setup** | GitHub repo, Pages enabled, project skeleton | Open a "hello" page on your phone |
-| **1. Data pipeline** | Python prep script + nightly GitHub Action | See fresh data files land automatically |
+| **0. Setup** ✅ code done, awaiting GitHub | Repo, Pages, skeleton screen with team/season pickers, headline tiles vs. NFL, by-down table | Open a working page on your phone |
+| **1. Data pipeline** ✅ code done, awaiting GitHub | Python prep script + nightly GitHub Action | See fresh data land automatically |
 | **2. MVP screen** | Team picker + down/distance + field position + game script filters, headline tiles, 2-3 charts | Do real weekly tendency prep |
 | **3. Personnel** | Join participation data; personnel/formation filters | Filter by 11 vs. 12 personnel, etc. |
 | **4. Advanced metrics** | League rankings: team/QB EPA, success rate, CPOE | See where teams rank |
@@ -75,9 +79,9 @@ Running cost: $0.
 
 You have an account but want help. Steps we'll do together:
 1. Create a new repository (e.g. `nfl-pbp-app`), public (required for free Pages).
-2. Connect the repository to this Claude Code environment so I can push code.
-3. Turn on GitHub Pages (Settings > Pages > Source: GitHub Actions).
-4. Confirm the nightly Action has permission to commit data files.
+2. Link GitHub to Claude (claude.ai/connect-github) and install the Claude GitHub App on the repo so code can be pushed.
+3. Turn on GitHub Pages (Settings > Pages > Source: **GitHub Actions**).
+4. Push, watch the first workflow run, then open `https://emorris1025.github.io/nfl-pbp-app/` on your phone.
 
 ## 6. Open questions for later
 

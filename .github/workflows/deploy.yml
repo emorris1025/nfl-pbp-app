@@ -1,0 +1,57 @@
+# Rebuilds the data from nflverse and redeploys the site to GitHub Pages.
+# Runs nightly during the season, on every push to main, and on demand
+# (Actions tab > "Build data and deploy" > Run workflow).
+name: Build data and deploy
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # 11:23 UTC (6:23 AM CT) daily, September through February,
+    # after nflverse's overnight play-by-play update.
+    - cron: '23 11 * 9-12,1-2 *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Build season data files
+        run: python scripts/build_data.py --out public/data
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
